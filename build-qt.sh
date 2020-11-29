@@ -9,6 +9,10 @@ function join_csv {
     awk -v d=", " '{s=(NR==1?s:s d)$0}END{print s}' "$@"
 }
 
+function docker_image_exists {
+    docker image inspect "$1" > /dev/null 2>&1
+}
+
 while [[ $# -gt 0 ]]; do
     case $1 in
     --src)
@@ -31,16 +35,20 @@ while [[ $# -gt 0 ]]; do
         export PKGVERSION="$2"
         shift 2
         ;;
+    --docker)
+        DOCKER="$2"
+        shift 2
+        ;;
     *)
         fail "$0: Unknown option $1"
         ;;
     esac
 done
 
-[ -n ${SRCDIR+x} ] || fail "$0: Source directory not specified"
+[[ -v SRCDIR ]] || fail "$0: Source directory not specified"
 [ -d "$SRCDIR" ] || fail "$0: Source directory does not exists"
 
-[ -n ${BUILDDIR+x} ] || fail "$0: Build directory not specified"
+[[ -v BUILDDIR ]] || fail "$0: Build directory not specified"
 [ -d "$BUILDDIR" ] || fail "$0: Build directory does not exists"
 [ -w "$BUILDDIR" ] || fail "$0: Build directory is not writable"
 
@@ -50,7 +58,13 @@ done
 
 export PREFIX="${PREFIX:-/opt/${PKGNAME}${PKGVERSION%%.*}}"
 
-export EXTPREFIX=$(pwd)/${PKGNAME}_${PKGVERSION}_$(dpkg --print-architecture)
+export EXTPREFIX=$PWD/${PKGNAME}_${PKGVERSION}_$(dpkg --print-architecture)
+
+if [[ -v DOCKER ]]; then
+    docker_image_exists "$DOCKER" || fail "$0: unknown docker image"
+    docker run -v "$PWD:/work" -v "$(realpath -s "$SRCDIR"):/src" -v "$(realpath -s "$BUILDDIR"):/build" -v "$PWD/work/cache:/cache" -e CCACHE_DIR=/cache --user $(id -u):$(id -g) "$DOCKER" ./build-qt.sh --src /src --build /build --prefix "$PREFIX" --package-name "$PKGNAME" --package-version "$PKGVERSION"
+    exit $?
+fi
 
 function build {
     mkdir -p "$BUILDDIR" &&
@@ -91,8 +105,6 @@ function prepare_package {
     >&2 echo DEPENDS
     >&2 join_csv /tmp/depends.txt
 
-    DEPENDENCIES_CSV=$(join_csv /tmp/depends.txt)
-
     mkdir -p $EXTPREFIX/DEBIAN
     cat <<EOF >$EXTPREFIX/DEBIAN/control
 Package: ${PKGNAME}${VERSION%%.*}
@@ -101,7 +113,7 @@ Architecture: $(dpkg --print-architecture)
 Maintainer: Cyrille Faucheux <cyrille.faucheux@gmail.com>
 Description: Qt${PKGVERSION%%.*} full package
  Qt is a cross-platform C++ application framework. Qt's primary feature is its rich set of widgets that provide standard GUI functionality.
-Depends: ${DEPENDENCIES_CSV}
+Depends: $(join_csv /tmp/depends.txt)
 EOF
 
     cat $EXTPREFIX/DEBIAN/control

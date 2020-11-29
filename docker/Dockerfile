@@ -69,4 +69,4 @@ RUN ln -s /usr/bin/ccache /usr/lib/ccache/cc & \
 
 ENV PATH="/usr/lib/ccache:${PATH}"
 
-WORKDIR work
+WORKDIR /work
