@@ -73,7 +73,7 @@ export EXTPREFIX=$PWD/${PKGNAME}_${PKGVERSION}_$(dpkg --print-architecture)
 
 if [[ -v DOCKER ]]; then
     docker_image_exists "$DOCKER" || fail "$0: unknown docker image"
-    docker run -v "$PWD:/work" -v "$(realpath -s "$SRCDIR"):/src" -v "$(realpath -s "$BUILDDIR"):/build" -v "$PWD/work/cache:/cache" -e CCACHE_DIR=/cache --user $(id -u):$(id -g) "$DOCKER" ./build-qt.sh --src /src --build /build --prefix "$PREFIX" --package-name "$PKGNAME" --package-version "$PKGVERSION" ${VERBOSE:+--verbose}
+    docker run --rm -v "$PWD:/work" -v "$(realpath -s "$SRCDIR"):/src" -v "$(realpath -s "$BUILDDIR"):/build" -v "$PWD/work/cache:/cache" -e CCACHE_DIR=/cache --user $(id -u):$(id -g) "$DOCKER" ./build-qt.sh --src /src --build /build --prefix "$PREFIX" --package-name "$PKGNAME" --package-version "$PKGVERSION" ${VERBOSE:+--verbose}
     exit $?
 fi
 

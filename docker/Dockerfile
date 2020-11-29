@@ -64,6 +64,9 @@ RUN apt-get update && \
       libxrender-dev \
       libzstd-dev
 
+RUN apt-get update && \
+      apt-get install -y procps
+
 RUN ln -s /usr/bin/ccache /usr/lib/ccache/cc & \
       ln -s /usr/bin/ccache /usr/lib/ccache/c++
 
