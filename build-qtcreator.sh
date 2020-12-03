@@ -18,10 +18,19 @@ function docker_image_exists {
     docker image inspect "$1" > /dev/null 2>&1
 }
 
+QMAKE=qmake
 VERBOSE=
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+    --docker-image)
+        DOCKER_IMAGE="$2"
+        shift 2
+        ;;
+    --docker-install-qt)
+        export QTDEB="$2"
+        shift 2
+        ;;
     --src)
         export SRCDIR="$2"
         shift 2
@@ -34,21 +43,21 @@ while [[ $# -gt 0 ]]; do
         export PREFIX="$2"
         shift 2
         ;;
+    --qmake)
+        export QMAKE="$2"
+        shift 2
+        ;;
+    --ccache)
+        export CCACHE_DIR="$2"
+        unset CCACHE_DISABLE
+        shift 2
+        ;;
     --package-name)
         export PKGNAME="$2"
         shift 2
         ;;
     --package-version)
         export PKGVERSION="$2"
-        shift 2
-        ;;
-    --docker-image)
-        DOCKER_IMAGE="$2"
-        shift 2
-        ;;
-    --ccache)
-        export CCACHE_DIR="$2"
-        unset CCACHE_DISABLE
         shift 2
         ;;
     -v | --verbose)
@@ -76,33 +85,41 @@ export PREFIX="${PREFIX:-/opt/${PKGNAME}${PKGVERSION%%.*}}"
 
 export EXTPREFIX=$PWD/${PKGNAME}_${PKGVERSION}_$(dpkg --print-architecture)
 
-if [[ -v CCACHE_DIR && ( ! -v CCACHE_DISABLE ) ]]; then
-    [ -d "$CCACHE_DIR" ] || fail "$0: CCache directory does not exists"
-    [ -w "$CCACHE_DIR" ] || fail "$0: CCache directory is not writable"
-fi
-
-function build_with_docker {
+function start_container {
     local ccache_args=()
     if [[ -v CCACHE_DIR && ( ! -v CCACHE_DISABLE ) ]]; then
         ccache_args+=(-v "$(realpath -s "$CCACHE_DIR"):/cache" -e CCACHE_DIR=/cache)
     fi
 
-    docker run --rm -v "$PWD:/work" -v "$(realpath -s "$SRCDIR"):/src" -v "$(realpath -s "$BUILDDIR"):/build" "${ccache_args[@]}" --user $(id -u):$(id -g) "$DOCKER_IMAGE" bash -x ./build-qt.sh --src /src --build /build --prefix "$PREFIX" --package-name "$PKGNAME" --package-version "$PKGVERSION" ${VERBOSE:+--verbose}
-    exit $?
+    docker run -d --rm -v "$PWD:/work" -v "$(realpath -s "$SRCDIR"):/src" -v "$(realpath -s "$BUILDDIR"):/build" "${ccache_args[@]}" -it "$DOCKER_IMAGE" bash
+}
+
+function build_with_docker {
+    local CONTAINER=$(start_container)
+    trap "docker stop $CONTAINER" EXIT
+
+    [[ -v QTDEB ]] && docker exec $CONTAINER dpkg -i "$QTDEB"
+
+    [[ -v QTDEB && -z "$QMAKE" ]] && QMAKE=$(dpkg -c "$QTDEB" | rev | awk '{print $1}' | rev | grep 'qmake$' | sed -e 's/^.//g')
+
+    docker exec --user $(id -u):$(id -g) $CONTAINER bash -x ./build-qtcreator.sh --src /src --build /build --prefix "$PREFIX" --qmake "$QMAKE" --package-name "$PKGNAME" --package-version "$PKGVERSION"
 }
 
 function build {
     mkdir -p "$BUILDDIR"
     (
         cd "$BUILDDIR"
-        "$SRCDIR/configure" -release -opensource -confirm-license -nomake examples -nomake tests -skip qtgamepad -skip qtdatavis3d -skip qtlocation -skip qtmultimedia -skip qtpurchasing -skip qtserialbus -skip qtserialport -skip qtspeech -skip qtvirtualkeyboard -skip qtwinextras -skip remoteobjects -skip qtscxml -skip qtwebsockets -system-zlib -system-libjpeg -system-libpng -system-freetype -system-pcre -system-harfbuzz -system-sqlite -system-tiff -system-webp -xcb -xkbcommon -no-pch -prefix "$PREFIX" -extprefix "$EXTPREFIX/$PREFIX"
+
+        export LLVM_INSTALL_DIR=/usr/lib/llvm-11
+        "$QMAKE" /src/qtcreator.pro
+        make -j$(nproc) qmake_all
         make -j$(nproc)
-        make -j$(nproc) install
+        env INSTALL_ROOT="$EXTPREFIX/$PREFIX" make -j$(nproc) install
     )
 }
 
 function prepare_package {
-    # List libraries provided by Qt
+    # # List libraries provided by QtCreator
     find "$EXTPREFIX/$PREFIX" -type f,l | filter -P '\.so(\.[0-9]+)*$' | rev | cut -d/ -f1 | rev | sort -u >/tmp/libraries.txt
     if [ "$VERBOSE" = y ]; then
         >&2 echo "LIBRARIES: $(join_csv /tmp/libraries.txt)"
@@ -110,9 +127,8 @@ function prepare_package {
 
     # List dependencies
     {
-        ldd $EXTPREFIX/$PREFIX/lib/*.so
-        ldd $EXTPREFIX/$PREFIX/plugins/*/*.so
-        ldd $(file $EXTPREFIX/$PREFIX/bin/* | filter -F ELF | cut -d: -f1)
+        ldd $EXTPREFIX/$PREFIX/lib/qtcreator/*.so
+        ldd $(file $EXTPREFIX/$PREFIX/bin/* $EXTPREFIX/$PREFIX/libexec/qtcreator/* | filter -F ELF | cut -d: -f1)
     } | filter -v -F linux-vdso.so | filter "^\s" | awk '{print $1}' | rev | cut -d/ -f1 | rev | cut -d: -f1 | sort -u >/tmp/dependencies.txt
     if [ "$VERBOSE" = y ]; then
         >&2 echo "DEPENDENCIES: $(join_csv /tmp/dependencies.txt)"
@@ -139,8 +155,18 @@ Package: ${PKGNAME}
 Version: ${PKGVERSION}
 Architecture: $(dpkg --print-architecture)
 Maintainer: Cyrille Faucheux <cyrille.faucheux@gmail.com>
-Description: Qt${PKGVERSION%%.*} full package
- Qt is a cross-platform C++ application framework. Qt's primary feature is its rich set of widgets that provide standard GUI functionality.
+Description: integrated development environment (IDE) for Qt
+ Qt Creator is a cross-platform integrated development environment (IDE) designed to make development with the Qt application framework faster and easier.
+ It includes:
+ * An advanced C++ code editor
+ * Integrated GUI layout and forms designer
+ * Project and build management tools
+ * Integrated, context-sensitive help system
+ * Visual debugger
+ * Rapid code navigation tools
+ * Supports multiple platforms
+ * Qt Quick Designer
+  Site: https://doc.qt.io/qt-5/topics-app-development.html
 Depends: $(join_csv /tmp/depends.txt)
 EOF
 

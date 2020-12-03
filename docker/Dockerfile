@@ -1,12 +1,12 @@
 FROM debian:stable
 
 RUN apt-get update && \
-      apt-get install -y wget software-properties-common build-essential ccache && \
+      apt-get install -y procps wget software-properties-common build-essential ccache && \
       wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
 
 RUN echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-11 main" > /etc/apt/sources.list.d/llvm.list && \
       apt-get update && \
-      apt-get install -y llvm-11-dev
+      apt-get install -y llvm-11 llvm-11-dev libclang-11-dev
 
 RUN apt-get update && \
       apt-get install -y \
@@ -64,11 +64,8 @@ RUN apt-get update && \
       libxrender-dev \
       libzstd-dev
 
-RUN apt-get update && \
-      apt-get install -y procps
-
-RUN ln -s /usr/bin/ccache /usr/lib/ccache/cc & \
-      ln -s /usr/bin/ccache /usr/lib/ccache/c++
+# RUN ln -s /usr/bin/ccache /usr/lib/ccache/cc & \
+#       ln -s /usr/bin/ccache /usr/lib/ccache/c++
 
 ENV PATH="/usr/lib/ccache:${PATH}"
 
