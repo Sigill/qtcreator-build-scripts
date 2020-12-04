@@ -18,6 +18,10 @@ function docker_image_exists {
     docker image inspect "$1" > /dev/null 2>&1
 }
 
+function usage {
+    echo "Usage: $0 --src <source directory> --build <build directory> --prefix <install directory> --package-name <string> --package-version <version> [--docker-image <docker image>] [--ccache <ccache directory>] [-v]"
+}
+
 VERBOSE=
 
 while [[ $# -gt 0 ]]; do
@@ -54,6 +58,10 @@ while [[ $# -gt 0 ]]; do
     -v | --verbose)
         VERBOSE=y
         shift
+        ;;
+    -h | --help)
+        usage
+        exit
         ;;
     *)
         fail "$0: Unknown option $1"

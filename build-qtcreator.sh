@@ -18,19 +18,15 @@ function docker_image_exists {
     docker image inspect "$1" > /dev/null 2>&1
 }
 
-QMAKE=qmake
+function usage {
+    echo "Usage: $0 --src <source directory> --build <build directory> --prefix <install directory> --package-name <string> --package-version <version> [--qmake <qmake executable>] [--docker-image <docker image>] [--docker-install-qt <deb package>] [--ccache <ccache directory>] [-v]"
+}
+
+QMAKE=
 VERBOSE=
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-    --docker-image)
-        DOCKER_IMAGE="$2"
-        shift 2
-        ;;
-    --docker-install-qt)
-        export QTDEB="$2"
-        shift 2
-        ;;
     --src)
         export SRCDIR="$2"
         shift 2
@@ -47,11 +43,6 @@ while [[ $# -gt 0 ]]; do
         export QMAKE="$2"
         shift 2
         ;;
-    --ccache)
-        export CCACHE_DIR="$2"
-        unset CCACHE_DISABLE
-        shift 2
-        ;;
     --package-name)
         export PKGNAME="$2"
         shift 2
@@ -60,9 +51,26 @@ while [[ $# -gt 0 ]]; do
         export PKGVERSION="$2"
         shift 2
         ;;
+    --docker-image)
+        DOCKER_IMAGE="$2"
+        shift 2
+        ;;
+    --docker-install-qt)
+        export QTDEB="$2"
+        shift 2
+        ;;
+    --ccache)
+        export CCACHE_DIR="$2"
+        unset CCACHE_DISABLE
+        shift 2
+        ;;
     -v | --verbose)
         VERBOSE=y
         shift
+        ;;
+    -h | --help)
+        usage
+        exit
         ;;
     *)
         fail "$0: Unknown option $1"
@@ -100,7 +108,7 @@ function build_with_docker {
 
     [[ -v QTDEB ]] && docker exec $CONTAINER dpkg -i "$QTDEB"
 
-    [[ -v QTDEB && -z "$QMAKE" ]] && QMAKE=$(dpkg -c "$QTDEB" | rev | awk '{print $1}' | rev | grep 'qmake$' | sed -e 's/^.//g')
+    [[ -v QTDEB && -z "$QMAKE" ]] && QMAKE=$(dpkg -c "$QTDEB" | rev | awk '{print $1}' | rev | grep 'qmake$' | sed -e 's/^.//g') || QMAKE=qmake
 
     docker exec --user $(id -u):$(id -g) $CONTAINER bash -x ./build-qtcreator.sh --src /src --build /build --prefix "$PREFIX" --qmake "$QMAKE" --package-name "$PKGNAME" --package-version "$PKGVERSION"
 }
